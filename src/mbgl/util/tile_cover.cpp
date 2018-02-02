@@ -4,6 +4,8 @@
 #include <mbgl/map/transform_state.hpp>
 
 #include <functional>
+#include <unordered_map>
+#include <utility>
 
 namespace mbgl {
 
@@ -124,6 +126,74 @@ std::vector<UnwrappedTileID> tileCover(const Point<double>& tl,
     return result;
 }
 
+Point<double> projectPoint(const Point<double>& pt, int32_t zoom, uint16_t tileSize_) {
+    const double worldSize = tileSize_ * std::pow(2, zoom);
+    Point<double> projectedPt(
+            util::LONGITUDE_MAX + pt.x,
+            util::LONGITUDE_MAX - util::RAD2DEG * std::log(std::tan(M_PI / 4 + pt.y * M_PI / util::DEGREES_MAX)));
+    projectedPt *= worldSize / util::DEGREES_MAX;
+    return projectedPt;
+}
+
+Point<double> projectPoint(const LatLng& latLng, int32_t zoom, uint16_t tileSize_) {
+    return projectPoint(Point<double>{latLng.longitude(), latLng.latitude()}, zoom, tileSize_);
+}
+
+Point<double> pointInTile(Point<double> pt, int32_t zoom, uint16_t tileSize_) {
+    auto projectedPoint = projectPoint(pt, zoom, tileSize_);
+    return { projectedPoint.x/tileSize_ , projectedPoint.y/tileSize_ };
+}
+
+UnwrappedTileID pointToTile(const Point<double>& pt, int32_t zoom, uint16_t tileSize_) {
+    const double t2z = tileSize_ * std::pow(2, zoom);
+    auto projectedPt = projectPoint(pt, zoom, tileSize_);
+    int32_t x = floor((std::min(projectedPt.x, t2z)) / tileSize_);
+    int32_t y = floor((std::min(projectedPt.y, t2z)) / tileSize_);
+    return UnwrappedTileID{ (uint8_t)zoom, x, y };
+}
+
+std::vector<UnwrappedTileID> lineCover(const std::vector<Point<double>>& coords, int32_t zoom) {
+    std::unordered_map<UnwrappedTileID, bool> tiles;
+    std::vector<UnwrappedTileID> tileIds;
+
+    auto numCoords = coords.size();
+    for (uint32_t i=0; i < numCoords - 1; i++) {
+        auto startTilePoint = pointInTile(coords[i], zoom, util::tileSize);
+        auto stopTilePoint = pointInTile(coords[i+1], zoom, util::tileSize);
+        // Use slop of line between two points to determine rate of scan
+        auto slope = stopTilePoint - startTilePoint;
+        if (slope.x == 0 && slope.y == 0) continue;
+
+        auto dirX = slope.x > 0 ? 1 : -1;
+        auto dirY = slope.y > 0 ? 1 : -1;
+
+        Point<double> tilePt = { floor(startTilePoint.x), floor(startTilePoint.y) };
+
+        auto tMaxX = slope.x == 0 ? INT_MAX : std::abs(((slope.x > 0 ? 1 : 0) + tilePt.x - startTilePoint.x)/slope.x);
+        auto tMaxY = slope.y == 0 ? INT_MAX : std::abs(((slope.y > 0 ? 1 : 0) + tilePt.y - startTilePoint.y)/ slope.y);
+
+        auto tdx = std::abs(dirX / slope.x);
+        auto tdy = std::abs(dirY / slope.y);
+
+        tiles.emplace(std::make_pair(UnwrappedTileID(zoom, tilePt.x, tilePt.y), true));
+
+        while (tMaxX < 1 || tMaxY < 1) {
+            if (tMaxX < tMaxY) {
+                tMaxX += tdx;
+                tilePt.x += dirX;
+            } else {
+                tMaxY += tdy;
+                tilePt.y += dirY;
+            }
+            tiles.emplace(std::make_pair(UnwrappedTileID(zoom, tilePt.x, tilePt.y), true));
+        }
+    }
+    for(auto &p: tiles) {
+        tileIds.push_back(p.first);
+    }
+    return tileIds;
+}
+
 } // namespace
 
 int32_t coveringZoomLevel(double zoom, style::SourceType type, uint16_t size) {
@@ -155,6 +225,48 @@ std::vector<UnwrappedTileID> tileCover(const LatLngBounds& bounds_, int32_t z) {
         z);
 }
 
+std::vector<UnwrappedTileID> tileCover(const Geometry<double>& geom, int32_t zoom ) {
+
+    struct ToTileCover {
+        int32_t zoom;
+        std::vector<UnwrappedTileID> operator()(const Point<double>& g) const {
+            return { pointToTile(g, zoom, util::tileSize) };
+        }
+        std::vector<UnwrappedTileID> operator()(const MultiPoint<double>& g) const {
+            std::vector<UnwrappedTileID> _tiles;
+            for (auto& pt: g) {
+                _tiles.emplace_back(pointToTile(pt, zoom, util::tileSize));
+            };
+            return _tiles;
+        }
+        std::vector<UnwrappedTileID> operator()(const LineString<double>& g) const {
+            return lineCover(g, zoom);
+        }
+        std::vector<UnwrappedTileID> operator()(const MultiLineString<double>& g) const {
+            std::vector<UnwrappedTileID> tiles;
+            for(auto& line: g) {
+                auto tileIds = lineCover(line, zoom);
+                //TODO: AHM: 
+                //tiles.insert(tiles.end(), tileIds.begin(), tileIds.end());
+            }
+            return tiles;
+        }
+        std::vector<UnwrappedTileID> operator()(const Polygon<double>& ) const {
+            return {};
+        }
+        std::vector<UnwrappedTileID> operator()(const MultiPolygon<double>& ) const {
+            return {};
+        }
+        std::vector<UnwrappedTileID> operator()(const mapbox::geometry::geometry_collection<double>& ) const {
+            return {};
+        }
+    };
+    ToTileCover ttc;
+    ttc.zoom = zoom;
+    auto tiles = apply_visitor(ttc, geom);
+    return tiles;
+}
+
 std::vector<UnwrappedTileID> tileCover(const TransformState& state, int32_t z) {
     assert(state.valid());
 
@@ -174,8 +286,8 @@ std::vector<UnwrappedTileID> tileCover(const TransformState& state, int32_t z) {
 // and uses that to compute the tile cover count
 uint64_t tileCount(const LatLngBounds& bounds, uint8_t zoom, uint16_t tileSize_){
 
-    auto sw = Projection::project(bounds.southwest().wrapped(), zoom, tileSize_);
-    auto ne = Projection::project(bounds.northeast().wrapped(), zoom, tileSize_);
+    auto sw = projectPoint(bounds.southwest().wrapped(), zoom, tileSize_);
+    auto ne = projectPoint(bounds.northeast().wrapped(), zoom, tileSize_);
 
     auto x1 = floor(sw.x/ tileSize_);
     auto x2 = floor((ne.x - 1) / tileSize_);
