@@ -20,6 +20,8 @@ public:
                    const style::SymbolLayoutProperties::Evaluated&,
                    const float layoutTextSize,
                    const uint32_t index,
+                   const bool hasText,
+                   const bool hasIcon,
                    const float textBoxScale,
                    const float textPadding,
                    style::SymbolPlacementType textPlacement,
@@ -38,6 +40,8 @@ public:
     uint32_t index;
     bool hasText;
     bool hasIcon;
+    bool hasTextData;
+    bool hasIconData;
     SymbolQuads horizontalGlyphQuads;
     SymbolQuads verticalGlyphQuads;
     optional<SymbolQuad> iconQuad;

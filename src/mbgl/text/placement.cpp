@@ -108,8 +108,8 @@ void Placement::placeLayerBucket(
                 continue;
             }
 
-            bool placeText = false;
-            bool placeIcon = false;
+            bool placeText = symbolInstance.hasText;
+            bool placeIcon = symbolInstance.hasIcon;
             bool offscreen = true;
 
             if (symbolInstance.placedTextIndex) {
@@ -149,11 +149,11 @@ void Placement::placeLayerBucket(
                 placeIcon = placeText && placeIcon;
             }
 
-            if (placeText) {
+            if (placeText && symbolInstance.hasTextData) {
                 collisionIndex.insertFeature(symbolInstance.textCollisionFeature, bucket.layout.get<style::TextIgnorePlacement>());
             }
 
-            if (placeIcon) {
+            if (placeIcon && symbolInstance.hasIconData) {
                 collisionIndex.insertFeature(symbolInstance.iconCollisionFeature, bucket.layout.get<style::IconIgnorePlacement>());
             }
 
@@ -249,7 +249,7 @@ void Placement::updateBucketOpacities(SymbolBucket& bucket, std::set<uint32_t>& 
 
         seenCrossTileIDs.insert(symbolInstance.crossTileID);
 
-        if (symbolInstance.hasText) {
+        if (symbolInstance.hasTextData) {
             auto opacityVertex = SymbolOpacityAttributes::vertex(opacityState.text.placed, opacityState.text.opacity);
             for (size_t i = 0; i < symbolInstance.horizontalGlyphQuads.size() * 4; i++) {
                 bucket.text.opacityVertices.emplace_back(opacityVertex);
@@ -264,7 +264,7 @@ void Placement::updateBucketOpacities(SymbolBucket& bucket, std::set<uint32_t>& 
                 bucket.text.placedSymbols[*symbolInstance.placedVerticalTextIndex].hidden = opacityState.isHidden();
             }
         }
-        if (symbolInstance.hasIcon) {
+        if (symbolInstance.hasIconData) {
             auto opacityVertex = SymbolOpacityAttributes::vertex(opacityState.icon.placed, opacityState.icon.opacity);
             if (symbolInstance.iconQuad) {
                 bucket.icon.opacityVertices.emplace_back(opacityVertex);

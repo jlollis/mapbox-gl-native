@@ -323,6 +323,7 @@ void SymbolLayout::addFeature(const std::size_t index,
             symbolInstances.emplace_back(anchor, line, shapedTextOrientations, shapedIcon,
                     layout.evaluate(zoom, feature), layoutTextSize,
                     symbolInstances.size(),
+                    bool(feature.text), bool(feature.icon),
                     textBoxScale, textPadding, textPlacement, textOffset,
                     iconBoxScale, iconPadding, iconOffset,
                     glyphPositionMap, indexedFeature, index, feature.text.value_or(std::u16string()), overscaling);
@@ -428,14 +429,14 @@ std::unique_ptr<SymbolBucket> SymbolLayout::place(const bool showCollisionBoxes)
 
     for (SymbolInstance &symbolInstance : bucket->symbolInstances) {
 
-        const bool hasText = symbolInstance.hasText;
-        const bool hasIcon = symbolInstance.hasIcon;
+        const bool hasTextData = symbolInstance.hasTextData;
+        const bool hasIconData = symbolInstance.hasIconData;
 
         const auto& feature = features.at(symbolInstance.featureIndex);
 
         // Insert final placement into collision tree and add glyphs/icons to buffers
 
-        if (hasText) {
+        if (hasTextData) {
             const Range<float> sizeData = bucket->textSizeBinder->getVertexSizeData(feature);
             bucket->text.placedSymbols.emplace_back(symbolInstance.anchor.point, symbolInstance.anchor.segment, sizeData.min, sizeData.max,
                     symbolInstance.textOffset, symbolInstance.writingModes, symbolInstance.line, CalculateTileDistances(symbolInstance.line, symbolInstance.anchor));
@@ -474,7 +475,7 @@ std::unique_ptr<SymbolBucket> SymbolLayout::place(const bool showCollisionBoxes)
             }
         }
 
-        if (hasIcon) {
+        if (hasIconData) {
             if (symbolInstance.iconQuad) {
                 const Range<float> sizeData = bucket->iconSizeBinder->getVertexSizeData(feature);
                 bucket->icon.placedSymbols.emplace_back(symbolInstance.anchor.point, symbolInstance.anchor.segment, sizeData.min, sizeData.max,
