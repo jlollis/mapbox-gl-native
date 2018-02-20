@@ -14,7 +14,6 @@
 #include <iostream>
 
 using namespace mbgl;
-using namespace std::literals::string_literals;
 
 class MockObserver : public OfflineRegionObserver {
 public:
@@ -50,9 +49,9 @@ public:
 
     Response response(const std::string& path) {
         Response result;
-        result.data = std::make_shared<std::string>(util::read_file("test/fixtures/offline_download/"s + path));
-        size_t uncompressed = result.data->size();
-        size_t compressed = util::compress(*result.data).size();
+        result.data = util::readFile("test/fixtures/offline_download/" + path);
+        size_t uncompressed = result.data.uncompressedData()->size();
+        size_t compressed = result.data.compressedData()->size();
         size += std::min(uncompressed, compressed);
         return result;
     }
